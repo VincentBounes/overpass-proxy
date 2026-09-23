@@ -1,7 +1,5 @@
 // Worker Cloudflare — overpass-proxy v3
-// Routes :
-//   POST /          → proxy Overpass OSM (cascade 4 miroirs, shuffle, retry 2×)
-//   GET  /wfs?...   → proxy WFS Géorisques (CORS bloqué depuis vigie-4ze.pages.dev)
+// Route : POST / → proxy Overpass OSM (cascade 4 miroirs, shuffle, retry 2×)
 // URL finale : https://overpass-proxy.bounes-v.workers.dev
 
 const MIRRORS = [
@@ -48,44 +46,12 @@ async function tryMirror(mirror, body) {
   }
 }
 
-async function proxyWFS(request) {
-  // Transférer tous les query params vers Géorisques WFS
-  const inUrl  = new URL(request.url)
-  const target = 'https://georisques.gouv.fr/api/v1/wfs' + inUrl.search
-  const ctrl   = new AbortController()
-  const timer  = setTimeout(() => ctrl.abort(), 10000)
-  try {
-    const r = await fetch(target, { signal: ctrl.signal })
-    clearTimeout(timer)
-    if (!r.ok) throw new Error(`WFS ${r.status}`)
-    const headers = new Headers(CORS)
-    const ct = r.headers.get('content-type')
-    if (ct) headers.set('Content-Type', ct)
-    headers.set('Cache-Control', 'public, max-age=120')
-    console.log('[wfs-proxy] ✅', target)
-    return new Response(r.body, { status: 200, headers })
-  } catch (e) {
-    clearTimeout(timer)
-    console.warn('[wfs-proxy] ❌', e.message)
-    return new Response(JSON.stringify({ error: 'WFS Géorisques indisponible', detail: e.message }), {
-      status: 502,
-      headers: { ...CORS, 'Content-Type': 'application/json' },
-    })
-  }
-}
-
 export default {
   async fetch(request) {
-    const url = new URL(request.url)
 
     // Preflight CORS
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: CORS })
-    }
-
-    // Route /wfs → proxy Géorisques WFS
-    if (url.pathname === '/wfs') {
-      return proxyWFS(request)
     }
 
     // Route / → proxy Overpass
